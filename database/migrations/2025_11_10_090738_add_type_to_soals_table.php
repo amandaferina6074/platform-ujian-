@@ -9,8 +9,6 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('soals', function (Blueprint $table) {
-            // Tambahkan kolom 'type' setelah 'image_path'
-            // Kita set default-nya 'pilihan_ganda' agar soal lama Anda tetap berfungsi
             $table->string('type')->default('pilihan_ganda')->after('image_path');
         });
     }
