@@ -5,48 +5,37 @@ use App\Models\Ujian;
 use App\Models\HasilUjian;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Carbon\Carbon; // PERUBAHAN: Import Carbon
+use Carbon\Carbon; 
 
 class PengerjaanController extends Controller
 {
-    /**
-     * PERUBAHAN: Menampilkan halaman KONFIRMASI.
-     * Dulu: menampilkan soal.
-     */
+    // ... (fungsi start, begin, show tidak berubah) ...
     public function start(Ujian $ujian)
     {
-        // Cek apakah mahasiswa sudah pernah mengerjakan dan selesai
         $hasilSebelumnya = HasilUjian::where('user_id', Auth::id())
                                 ->where('ujian_id', $ujian->id)
-                                ->whereNotNull('finished_at') // Cek yg sudah selesai
+                                ->whereNotNull('finished_at') 
                                 ->first();
 
         if ($hasilSebelumnya) {
              return redirect()->route('pengerjaan.result', $ujian)->with('status', 'Anda sudah pernah menyelesaikan ujian ini.');
         }
 
-        // Cek apakah mahasiswa sedang aktif mengerjakan (misal: refresh tab)
         $pengerjaanAktif = HasilUjian::where('user_id', Auth::id())
                                 ->where('ujian_id', $ujian->id)
-                                ->whereNull('finished_at') // Cek yg belum selesai
+                                ->whereNull('finished_at') 
                                 ->first();
         
         if ($pengerjaanAktif) {
-            // Jika ada, langsung arahkan ke halaman soal
             return redirect()->route('pengerjaan.show', $pengerjaanAktif);
         }
 
-        // Jika belum, tampilkan halaman konfirmasi
         $ujian->loadCount('soals');
         return view('pengerjaan.start', compact('ujian'));
     }
 
-    /**
-     * PERUBAHAN: Method BARU untuk MEREKAM waktu mulai.
-     */
     public function begin(Ujian $ujian)
     {
-        // Cek lagi untuk menghindari double-click
         $pengerjaanAktif = HasilUjian::where('user_id', Auth::id())
                                 ->where('ujian_id', $ujian->id)
                                 ->whereNull('finished_at')
@@ -56,53 +45,37 @@ class PengerjaanController extends Controller
             return redirect()->route('pengerjaan.show', $pengerjaanAktif);
         }
 
-        // Buat record pengerjaan baru
         $hasilUjian = HasilUjian::create([
             'user_id' => Auth::id(),
             'ujian_id' => $ujian->id,
             'started_at' => now(),
-            'skor' => null, // Skor masih null
+            'skor' => null, 
         ]);
 
         return redirect()->route('pengerjaan.show', $hasilUjian);
     }
 
-    /**
-     * PERUBAHAN: Method BARU untuk MENAMPILKAN soal + timer.
-     * Menggunakan model binding HasilUjian.
-     */
     public function show(HasilUjian $hasilUjian)
     {
-        // Pastikan user ini yang punya pengerjaan
         if ($hasilUjian->user_id !== Auth::id()) {
             abort(403);
         }
 
-        // Pastikan ujian belum selesai
         if ($hasilUjian->finished_at) {
              return redirect()->route('pengerjaan.result', $hasilUjian->ujian_id)->with('status', 'Anda sudah menyelesaikan ujian ini.');
         }
 
-        // Load relasi yg dibutuhkan
         $hasilUjian->load('ujian.soals.pilihanJawabans');
-
-        // Hitung waktu selesai (Server-side)
         $endTime = $hasilUjian->started_at->addMinutes($hasilUjian->ujian->durasi_menit);
 
-        // Jika waktu sudah habis saat halaman di-load
         if (now()->greaterThan($endTime)) {
-            // Paksa submit (meski belum tentu ada jawaban)
              return $this->forceSubmit($hasilUjian);
         }
 
         return view('pengerjaan.show', compact('hasilUjian', 'endTime'));
     }
 
-
-    /**
-     * PERUBAHAN: Logika submit sekarang divalidasi oleh server.
-     * Menggunakan model binding HasilUjian.
-     */
+    // --- MULAI PERUBAHAN DI SINI ---
     public function submit(Request $request, HasilUjian $hasilUjian)
     {
         // 1. Validasi Keamanan
@@ -112,71 +85,90 @@ class PengerjaanController extends Controller
 
         // 2. Validasi Waktu (SERVER-SIDE)
         $endTime = $hasilUjian->started_at->addMinutes($hasilUjian->ujian->durasi_menit);
-        // Beri toleransi 5 detik untuk network delay
         if (now()->greaterThan($endTime->addSeconds(5))) {
             return $this->forceSubmit($hasilUjian, 'Waktu Anda habis. Jawaban terakhir tidak tersimpan.');
         }
         
-        // 3. Validasi Input (Sama seperti sebelumnya)
+        // 3. Validasi Input (Dibuat lebih longgar untuk menerima esai)
         $request->validate([
             'jawaban' => 'required|array',
-            'jawaban.*' => 'required|integer', // Memastikan semua soal dijawab
+            'jawaban.*' => 'nullable', // Izinkan null jika tidak dijawab
         ]);
 
-        // 4. Hitung Skor (Sama seperti sebelumnya)
-        $ujian = $hasilUjian->ujian->load('soals.pilihanJawabans'); // Eager load
-        $total_soal = $ujian->soals->count();
+        // 4. Hitung Skor (HANYA UNTUK PILIHAN GANDA)
+        $ujian = $hasilUjian->ujian->load('soals.pilihanJawabans'); 
+        
+        $total_soal_pg = 0; // Total soal Pilihan Ganda
         $jawaban_benar = 0;
 
         foreach ($ujian->soals as $soal) {
-            $id_pilihan_user = $request->jawaban[$soal->id] ?? null;
+            
+            // Ambil data jawaban untuk soal ini
+            $jawaban_data = $request->jawaban[$soal->id] ?? null;
 
-            if ($id_pilihan_user) {
-                // Gunakan relasi yang sudah di-load, bukan query baru
-                $pilihan_benar = $soal->pilihanJawabans->firstWhere('apakah_benar', true);
-                if ($pilihan_benar && $pilihan_benar->id == $id_pilihan_user) {
-                    $jawaban_benar++;
+            if ($soal->type == 'pilihan_ganda') {
+                // Ini adalah soal PG
+                $total_soal_pg++;
+                
+                $id_pilihan_user = $jawaban_data['pilihan_id'] ?? null;
+
+                if ($id_pilihan_user) {
+                    $pilihan_benar = $soal->pilihanJawabans->firstWhere('apakah_benar', true);
+                    if ($pilihan_benar && $pilihan_benar->id == $id_pilihan_user) {
+                        $jawaban_benar++;
+                    }
                 }
-            }
+            } 
+            
+            // Nanti di sini kita akan tambahkan logika untuk menyimpan jawaban esai
+            // if ($soal->type == 'esai') {
+            //     $teks_jawaban = $jawaban_data['teks_jawaban'] ?? null;
+            //     // ... (simpan $teks_jawaban ke tabel baru)
+            // }
         }
 
-        $skor = ($total_soal > 0) ? ($jawaban_benar / $total_soal) * 100 : 0;
+        // Skor dihitung HANYA berdasarkan soal PG
+        $skor = ($total_soal_pg > 0) ? ($jawaban_benar / $total_soal_pg) * 100 : 0;
+        
+        // Cek apakah ada soal esai, jika ada, skor akhir perlu ditinjau
+        $ada_esai = $ujian->soals->contains('type', 'esai');
 
-        // 5. Simpan Hasil (UPDATE, bukan CREATE)
+        // 5. Simpan Hasil
         $hasilUjian->update([
-            'skor' => $skor,
+            'skor' => $skor, // Simpan skor PG
             'finished_at' => now(),
+            // Nanti di sini kita update 'status' -> 'Menunggu Koreksi' jika $ada_esai
         ]);
 
-        // Redirect ke halaman hasil dengan membawa ID ujian
-        return redirect()->route('pengerjaan.result', $ujian->id)->with('status', 'Ujian telah selesai dikerjakan!');
-    }
+        $pesan = 'Ujian telah selesai dikerjakan!';
+        if ($ada_esai) {
+            $pesan = 'Ujian telah selesai. Skor pilihan ganda Anda telah disimpan. Jawaban esai akan dikoreksi oleh dosen.';
+        }
 
-    /**
-     * PERUBAHAN: Method result sekarang mengambil skor dari DB.
-     * Tidak lagi bergantung pada session.
-     */
+        return redirect()->route('pengerjaan.result', $ujian->id)->with('status', $pesan);
+    }
+    // --- AKHIR PERUBAHAN ---
+
     public function result(Ujian $ujian)
     {
         $hasil = HasilUjian::where('user_id', Auth::id())
                         ->where('ujian_id', $ujian->id)
-                        ->whereNotNull('finished_at') // Pastikan yg sudah selesai
-                        ->latest('finished_at') // Ambil yg terbaru
+                        ->whereNotNull('finished_at') 
+                        ->latest('finished_at')
                         ->firstOrFail();
 
         $skor = $hasil->skor;
+        // Kita bisa tambahkan logika di sini untuk menampilkan pesan 'Menunggu Koreksi'
         return view('pengerjaan.result', compact('ujian', 'skor'));
     }
 
-    /**
-     * Helper function untuk submit paksa jika waktu habis.
-     */
     private function forceSubmit(HasilUjian $hasilUjian, $message = 'Waktu habis! Ujian diselesaikan secara otomatis.')
     {
          if (!$hasilUjian->finished_at) {
-            // Update skor (jika belum ada, akan jadi 0 karena tidak ada jawaban yg diproses)
+            // TODO: Seharusnya kita juga menghitung skor PG di sini jika ada jawaban parsial,
+            // tapi untuk sekarang kita set 0 agar selesai.
             $hasilUjian->update([
-                'skor' => $hasilUjian->skor ?? 0, // Set skor 0 jika masih null
+                'skor' => $hasilUjian->skor ?? 0, 
                 'finished_at' => now(),
             ]);
          }

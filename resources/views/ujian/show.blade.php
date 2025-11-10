@@ -25,22 +25,26 @@
             <div class="mb-4 pb-3 border-bottom">
                 <p class="fw-bold"> {{ $key + 1 }}. {{ $soal->pertanyaan }}</p>
 
-                {{-- PERUBAHAN: Tampilkan gambar jika ada --}}
+                {{-- Tampilkan gambar (Ini seharusnya sudah berfungsi setelah Langkah 1) --}}
                 @if ($soal->image_path)
                 <div class="mb-3">
-                    {{-- Storage::url() akan mengonversi path 'public/...' menjadi URL yg bisa diakses --}}
                     <img src="{{ Storage::url($soal->image_path) }}" alt="Gambar Soal" class="img-fluid rounded" style="max-height: 300px;">
                 </div>
                 @endif
 
-                <ul class="list-unstyled ps-4">
-                    @foreach ($soal->pilihanJawabans as $pilihan)
-                        <li class="{{ $pilihan->apakah_benar ? 'text-success fw-bold' : '' }}">
-                            <i class="bi {{ $pilihan->apakah_benar ? 'bi-check-circle-fill' : 'bi-circle' }} me-2"></i>
-                            {{ $pilihan->teks_pilihan }}
-                        </li>
-                    @endforeach
-                </ul>
+                {{-- PERUBAHAN: Tampilkan Pilihan atau Label Esai --}}
+                @if ($soal->type == 'pilihan_ganda')
+                    <ul class="list-unstyled ps-4">
+                        @foreach ($soal->pilihanJawabans as $pilihan)
+                            <li class="{{ $pilihan->apakah_benar ? 'text-success fw-bold' : '' }}">
+                                <i class="bi {{ $pilihan->apakah_benar ? 'bi-check-circle-fill' : 'bi-circle' }} me-2"></i>
+                                {{ $pilihan->teks_pilihan }}
+                            </li>
+                        @endforeach
+                    </ul>
+                @elseif ($soal->type == 'esai')
+                    <span class="badge bg-secondary ms-4">Tipe: Esai</span>
+                @endif
             </div>
         @empty
             <div class="alert alert-info text-center">Belum ada soal untuk ujian ini.</div>
