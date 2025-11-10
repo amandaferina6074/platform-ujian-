@@ -9,14 +9,13 @@ use Illuminate\Support\Facades\Storage;
 
 class UjianController extends Controller
 {
-    
+    // ... (fungsi index, create, store, show, createSoal tidak berubah) ...
     public function index() {
         $ujians = Ujian::withCount('soals')->latest()->paginate(5);
         return view('ujian.index', compact('ujians'));
     }
 
     public function create() {
-        
         return view('ujian.create');
     }
 
@@ -42,13 +41,14 @@ class UjianController extends Controller
     public function storeSoal(Request $request, Ujian $ujian) {
         
         $request->validate([
-            'type' => 'required|in:pilihan_ganda,esai', 
+            'type' => 'required|in:pilihan_ganda,esai',
             'pertanyaan' => 'required|string',
             'gambar_soal' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
             
-            'pilihan' => 'required_if:type,pilihan_ganda|array|min:4',
-            'pilihan.*' => 'required_if:type,pilihan_ganda|string',
-            'jawaban_benar' => 'required_if:type,pilihan_ganda|integer|min:0|max:3',
+            // PERBAIKAN: Tambahkan 'nullable'
+            'pilihan' => 'required_if:type,pilihan_ganda|array|min:4|nullable',
+            'pilihan.*' => 'required_if:type,pilihan_ganda|string|nullable',
+            'jawaban_benar' => 'required_if:type,pilihan_ganda|integer|min:0|max:3|nullable',
         ]);
 
         $path = null;
@@ -61,7 +61,7 @@ class UjianController extends Controller
             $soal = $ujian->soals()->create([
                 'pertanyaan' => $request->pertanyaan,
                 'image_path' => $path,
-                'type' => $request->type, 
+                'type' => $request->type,
             ]);
 
             if ($request->type === 'pilihan_ganda') {
