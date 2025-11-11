@@ -22,7 +22,6 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
-
 // --- Grup Route untuk Dosen ---
 Route::middleware(['auth', CheckRole::class . ':dosen'])->group(function() {
     Route::get('/ujian/create', [UjianController::class, 'create'])->name('ujian.create');
@@ -32,29 +31,33 @@ Route::middleware(['auth', CheckRole::class . ':dosen'])->group(function() {
     
     Route::get('/ujian/{ujian}/soal/create', [UjianController::class, 'createSoal'])->name('soal.create');
     Route::post('/ujian/{ujian}/soal', [UjianController::class, 'storeSoal'])->name('soal.store');
+
+    /* ======================================================
+         EDIT / UPDATE / DELETE SOAL
+    ====================================================== */
+    Route::get('/soal/{soal}/edit', [UjianController::class, 'editSoal'])->name('soal.edit');
+    Route::put('/soal/{soal}', [UjianController::class, 'updateSoal'])->name('soal.update');
+    Route::delete('/soal/{soal}', [UjianController::class, 'destroySoal'])->name('soal.destroy');
 });
 
-
-// --- Grup Route untuk Mahasiswa (VERSI BARU DENGAN TIMER) ---
+// --- Grup Route untuk Mahasiswa  ---
 Route::middleware(['auth', CheckRole::class . ':mahasiswa'])->prefix('pengerjaan')->group(function() {
-    
-    // Rute ini sekarang menampilkan halaman KONFIRMASI
+
+    // Rute ini  menampilkan halaman KONFIRMASI
     Route::get('/{ujian}/start', [PengerjaanController::class, 'start'])->name('pengerjaan.start');
     
-    // Rute BARU untuk MEREKAM waktu mulai dan me-redirect ke halaman soal
+    // Rute untuk MEREKAM waktu mulai dan me-redirect ke halaman soal
     Route::post('/{ujian}/begin', [PengerjaanController::class, 'begin'])->name('pengerjaan.begin');
 
-    // Rute BARU untuk MENAMPILKAN soal (yang ada timernya)
-    // URL ini yang cocok dengan /pengerjaan/1
+    // Rute  untuk MENAMPILKAN soal (yang ada timernya)
     Route::get('/{hasilUjian}', [PengerjaanController::class, 'show'])->name('pengerjaan.show');
     
-    // Rute submit sekarang menggunakan ID pengerjaan (HasilUjian)
+    // Rute submit
     Route::post('/{hasilUjian}/submit', [PengerjaanController::class, 'submit'])->name('pengerjaan.submit');
     
-    // Rute result tetap sama
+    // Rute result
     Route::get('/{ujian}/result', [PengerjaanController::class, 'result'])->name('pengerjaan.result');
 });
-
 
 // Rute Autentikasi dari Breeze
 require __DIR__.'/auth.php';
